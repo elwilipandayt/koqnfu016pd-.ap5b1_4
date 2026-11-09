@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#001833">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>MARK II — HUD</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --blue:    #00B4FF;
+    --blue-mid: #0066CC;
+    --cyan:    #00EEFF;
+    --bg:      #001833;
+    --text:    rgba(255,255,255,0.85);
+    --dim:     rgba(0,180,255,0.35);
+    --glow:    0 0 8px rgba(0,180,255,0.7);
+    --glow-strong: 0 0 16px rgba(0,238,255,0.9);
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--text);
+  }
+
+  /* ── CÁMARA ── */
+  #video {
+    position: fixed;
+    inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    filter: brightness(0.75) saturate(0.6);
+    z-index: 0;
+  }
+
+  /* ── CANVAS DETECCIÓN ── */
+  #det-canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%; height: 100%;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  /* ── SCANLINE ── */
+  #scanline {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgba(0,0,0,0.08) 3px,
+      rgba(0,0,0,0.08) 4px
+    );
+  }
+
+  /* ── OVERLAY TINT ── */
+  #tint {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center,
+      transparent 40%,
+      rgba(0,10,30,0.55) 100%
+    );
+  }
+
+  /* ── HUD LAYER ── */
+  #hud {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+  }
+
+  /* ── ESQUINAS DECORATIVAS ── */
+  .corner {
+    position: absolute;
+    width: 60px; height: 60px;
+    border-color: var(--blue);
+    border-style: solid;
+    opacity: 0.7;
+  }
+  .corner-tl { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+  .corner-tr { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+  .corner-bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+
+  /* ── BLOQUES DE DATOS ── */
+  .data-block {
+    position: absolute;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--blue);
+    letter-spacing: 0.04em;
+  }
+  .data-block .label {
+    font-size: 9px;
+    color: var(--dim);
+    display: block;
+    letter-spacing: 0.1em;
+  }
+  .data-block .value {
+    color: var(--cyan);
+    text-shadow: var(--glow);
+    font-size: 13px;
+  }
+
+  /* ── POSICIÓN DE BLOQUES ── */
+  #block-tl { top: 28px; left: 28px; }
+  #block-tr { top: 28px; right: 28px; text-align: right; }
+  #block-bl { bottom: 28px; left: 28px; }
+  #block-br { bottom: 28px; right: 28px; text-align: right; }
+
+  /* ── BARRA DE BATERÍA ── */
+  #battery-bar-wrap {
+    display: inline-block;
+    vertical-align: middle;
+    width: 60px; height: 8px;
+    border: 1px solid var(--blue-mid);
+    border-radius: 2px;
+    margin-top: 3px;
+    position: relative;
+    overflow: hidden;
+  }
+  #battery-bar-fill {
+    height: 100%;
+    background: var(--cyan);
+    box-shadow: 0 0 6px var(--cyan);
+    transition: width 0.5s;
+  }
+
+  /* ── TÍTULO CENTRAL ── */
+  #hud-title {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3em;
+    color: var(--blue);
+    opacity: 0.6;
+    white-space: nowrap;
+  }
+
+  /* ── CROSSHAIR CENTRAL ── */
+  #crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px; height: 40px;
+    pointer-events: none;
+  }
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: var(--blue);
+    opacity: 0.5;
+  }
+  #crosshair::before { width: 100%; height: 1px; top: 50%; left: 0; }
+  #crosshair::after  { width: 1px; height: 100%; left: 50%; top: 0; }
+
+  /* ── BARRA INFERIOR STATUS ── */
+  #status-bar {
+    position: absolute;
+    bottom: 68px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 9px;
+    letter-spacing: 0.25em;
+    color: var(--blue);
+    opacity: 0.5;
+    white-space: nowrap;
+  }
+
+  /* ── LÍNEAS LATERALES ── */
+  .side-line {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 80px; height: 1px;
+    background: linear-gradient(to right, transparent, var(--dim));
+  }
+  .side-line.right {
+    right: 100px;
+    background: linear-gradient(to left, transparent, var(--dim));
+  }
+  .side-line.left { left: 100px; }
+
+  /* ── TOOLTIP DE DETECCIÓN ── */
+  #detection-info {
+    position: absolute;
+    bottom: 90px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--cyan);
+    text-shadow: var(--glow);
+    opacity: 0;
+    transition: opacity 0.3s;
+    text-align: center;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+
+  /* ── PANEL PERMISO CÁMARA ── */
+  #cam-prompt {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    gap: 20px;
+  }
+  #cam-prompt h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    letter-spacing: 0.2em;
+    color: var(--blue);
+    text-shadow: var(--glow);
+  }
+  #cam-prompt p {
+    font-size: 12px;
+    color: var(--dim);
+    letter-spacing: 0.05em;
+  }
+  #cam-btn {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    padding: 12px 32px;
+    background: transparent;
+    border: 1px solid var(--blue);
+    color: var(--blue);
+    cursor: pointer;
+    pointer-events: all;
+    text-shadow: var(--glow);
+    box-shadow: var(--glow);
+    transition: background 0.2s, color 0.2s;
+  }
+  #cam-btn:hover {
+    background: var(--blue);
+    color: var(--bg);
+  }
+
+  /* ── BARRA MODELO ── */
+  #model-status {
+    position: absolute;
+    top: 48px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: var(--dim);
+    letter-spacing: 0.12em;
+    font-family: 'Share Tech Mono', monospace;
+  }
+
+  /* ── LÍNEAS DECORATIVAS VERTICALES ── */
+  .v-line {
+    position: absolute;
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, var(--dim), transparent);
+  }
+  .v-line.left  { left: 100px; top: 80px; bottom: 80px; }
+  .v-line.right { right: 100px; top: 80px; bottom: 80px; }
+
+  @keyframes pulse-ring {
+    0%   { opacity: 0.8; }
+    50%  { opacity: 0.3; }
+    100% { opacity: 0.8; }
+  }
+</style>
+</head>
+<body>
+
+<!-- PROMPT INICIAL -->
+<div id="cam-prompt">
+  <h1>MARK II — SYSTEM BOOT</h1>
+  <p>Se necesita acceso a cámara para iniciar el HUD</p>
+  <button id="cam-btn" onclick="initCamera()">INICIAR SISTEMA</button>
+</div>
+
+<!-- VIDEO -->
+<video id="video" autoplay muted playsinline></video>
+
+<!-- SCANLINE + TINT -->
+<div id="scanline"></div>
+<div id="tint"></div>
+
+<!-- CANVAS DETECCIÓN -->
+<canvas id="det-canvas"></canvas>
+
+<!-- HUD -->
+<div id="hud">
+  <!-- Esquinas -->
+  <div class="corner corner-tl"></div>
+  <div class="corner corner-tr"></div>
+  <div class="corner corner-bl"></div>
+  <div class="corner corner-br"></div>
+
+  <!-- Líneas decorativas -->
+  <div class="v-line left"></div>
+  <div class="v-line right"></div>
+
+  <!-- Título -->
+  <div id="hud-title">MARK II TACTICAL INTERFACE</div>
+  <div id="model-status">CARGANDO MODELO...</div>
+
+  <!-- Bloque superior izquierdo: hora + fecha -->
+  <div class="data-block" id="block-tl">
+    <span class="label">HORA LOCAL</span>
+    <span class="value" id="val-time">--:--:--</span>
+    <span class="label" style="margin-top:8px">FECHA</span>
+    <span class="value" id="val-date">--/--/----</span>
+    <span class="label" style="margin-top:8px">ALTITUD</span>
+    <span class="value" id="val-alt">-- m</span>
+  </div>
+
+  <!-- Bloque superior derecho: clima -->
+  <div class="data-block" id="block-tr">
+    <span class="label">CLIMA</span>
+    <span class="value" id="val-weather">OBTENIENDO...</span>
+    <span class="label" style="margin-top:8px">TEMPERATURA</span>
+    <span class="value" id="val-temp">-- °C</span>
+    <span class="label" style="margin-top:8px">HUMEDAD</span>
+    <span class="value" id="val-hum">-- %</span>
+  </div>
+
+  <!-- Bloque inferior izquierdo: batería -->
+  <div class="data-block" id="block-bl">
+    <span class="label">BATERÍA</span>
+    <span class="value" id="val-bat">-- %</span>
+    <div id="battery-bar-wrap"><div id="battery-bar-fill" style="width:0%"></div></div>
+    <span class="label" style="margin-top:8px">ESTADO</span>
+    <span class="value" id="val-bat-status">--</span>
+  </div>
+
+  <!-- Bloque inferior derecho: detección -->
+  <div class="data-block" id="block-br">
+    <span class="label">OBJETOS DETECTADOS</span>
+    <span class="value" id="val-obj-count">0</span>
+    <span class="label" style="margin-top:8px">OBJETIVO PRIMARIO</span>
+    <span class="value" id="val-obj-primary">NINGUNO</span>
+    <span class="label" style="margin-top:8px">CONFIANZA</span>
+    <span class="value" id="val-confidence">-- %</span>
+  </div>
+
+  <!-- Crosshair -->
+  <div id="crosshair"></div>
+
+  <!-- Info detección central -->
+  <div id="detection-info"></div>
+
+  <!-- Status bar -->
+  <div id="status-bar">SISTEMA OPERATIVO — TODOS LOS MÓDULOS EN LÍNEA</div>
+</div>
+
+<!-- TENSORFLOW.JS + COCO-SSD -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tensorflow/4.10.0/tf.min.js"></script>
+<script>
+// Cargamos cocoSsd desde CDN compatible
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+
+<script>
+// ── TRADUCCIONES DE OBJETOS ──
+const LABELS_ES = {
+  person:'PERSONA', bicycle:'BICICLETA', car:'AUTOMÓVIL', motorcycle:'MOTO',
+  airplane:'AVIÓN', bus:'COLECTIVO', train:'TREN', truck:'CAMIÓN',
+  boat:'EMBARCACIÓN', 'traffic light':'SEMÁFORO', 'fire hydrant':'HIDRANTE',
+  'stop sign':'SEÑAL STOP', bench:'BANCO', bird:'AVE', cat:'GATO', dog:'PERRO',
+  horse:'CABALLO', sheep:'OVEJA', cow:'VACA', elephant:'ELEFANTE', bear:'OSO',
+  zebra:'CEBRA', giraffe:'JIRAFA', backpack:'MOCHILA', umbrella:'PARAGUAS',
+  handbag:'CARTERA', tie:'CORBATA', suitcase:'VALIJA', frisbee:'FRISBEE',
+  skis:'ESQUÍES', snowboard:'SNOWBOARD', 'sports ball':'PELOTA', kite:'BARRILETE',
+  'baseball bat':'BATE', 'baseball glove':'GUANTE', skateboard:'SKATE',
+  surfboard:'TABLA DE SURF', 'tennis racket':'RAQUETA', bottle:'BOTELLA',
+  'wine glass':'COPA', cup:'VASO', fork:'TENEDOR', knife:'CUCHILLO',
+  spoon:'CUCHARA', bowl:'BOWL', banana:'BANANA', apple:'MANZANA',
+  sandwich:'SÁNDWICH', orange:'NARANJA', broccoli:'BRÓCOLI', carrot:'ZANAHORIA',
+  'hot dog':'PANCHO', pizza:'PIZZA', donut:'DONUT', cake:'TORTA', chair:'SILLA',
+  couch:'SOFÁ', 'potted plant':'PLANTA', bed:'CAMA', 'dining table':'MESA',
+  toilet:'INODORO', tv:'MONITOR', laptop:'LAPTOP', mouse:'MOUSE',
+  remote:'CONTROL REMOTO', keyboard:'TECLADO', 'cell phone':'CELULAR',
+  microwave:'MICROONDAS', oven:'HORNO', toaster:'TOSTADORA', sink:'PILETA',
+  refrigerator:'HELADERA', book:'LIBRO', clock:'RELOJ', vase:'JARRÓN',
+  scissors:'TIJERAS', 'teddy bear':'OSITO', 'hair drier':'SECADOR',
+  toothbrush:'CEPILLO DE DIENTES'
+};
+
+// ── ESTADO ──
+let model = null;
+let detecting = false;
+let lastDetections = [];
+
+// ── INIT CÁMARA ──
+async function initCamera() {
+  document.getElementById('cam-prompt').style.display = 'none';
+  initGeo();
+  if (!window.isSecureContext || !navigator.mediaDevices) {
+    document.getElementById('model-status').textContent = 'ERROR: ABRIR CON HTTPS';
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    const video = document.getElementById('video');
+    let started = false;
+    const start = () => { if (started) return; started = true; resizeCanvas(); loadModel(); };
+    video.onloadedmetadata = start;
+    video.setAttribute('playsinline',''); video.muted = true;
+    video.srcObject = stream;
+    try { await video.play(); } catch(_) {}
+    if (video.readyState >= 1) start();
+  } catch(e) {
+    document.getElementById('model-status').textContent = 'ERROR: CÁMARA (' + (e.name||'?') + ') — REVISÁ PERMISOS';
+  }
+}
+
+// ── RESIZE CANVAS ──
+function resizeCanvas() {
+  const c = document.getElementById('det-canvas');
+  c.width  = window.innerWidth;
+  c.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+
+// ── CARGAR MODELO ──
+async function loadModel() {
+  const st = document.getElementById('model-status');
+  st.textContent = 'CARGANDO MODELO DE DETECCIÓN...';
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const base = isIOS ? 'lite_mobilenet_v2' : 'mobilenet_v2';
+  try {
+    try { await tf.setBackend('webgl'); } catch(_) { await tf.setBackend('cpu'); }
+    await tf.ready();
+    model = await cocoSsd.load({ base });
+    // calentamiento: si falla en webgl, pasa a cpu
+    try {
+      await model.detect(document.getElementById('video'));
+    } catch(_) {
+      await tf.setBackend('cpu'); await tf.ready();
+      model = await cocoSsd.load({ base });
+    }
+    st.textContent = 'MODELO CARGADO — DETECCIÓN ACTIVA (' + tf.getBackend().toUpperCase() + ')';
+    setTimeout(() => { st.style.opacity = '0.3'; }, 3000);
+    detectLoop();
+  } catch(e) {
+    st.textContent = 'ERROR MODELO: ' + (e && e.message ? e.message : e);
+  }
+}
+
+// ── DETECCIÓN (hilo lógico separado del video y del dibujo) ──
+// El <video> se reproduce solo, de forma nativa. La IA corre a su ritmo sobre
+// una copia reducida del frame, y el dibujo (renderLoop) corre aparte a 60 fps
+// interpolando suavemente hacia las últimas detecciones.
+const DET_W = 320;                       // ancho de la copia que analiza la IA
+const DET_MIN_INTERVAL = 90;             // ms mínimos entre detecciones
+const detCanvas = document.createElement('canvas');
+const detCtx = detCanvas.getContext('2d', { willReadFrequently: false });
+let tracks = [];                         // {class, score, bbox, tbbox, last}
+
+function updateTracks(dets, scale) {
+  const now = performance.now();
+  const used = new Set();
+  dets.forEach(d => {
+    const tb = d.bbox.map(v => v / scale);   // volver a coords del video real
+    const cx = tb[0] + tb[2]/2, cy = tb[1] + tb[3]/2;
+    let best = null, bd = Infinity;
+    tracks.forEach((t, i) => {
+      if (used.has(i) || t.class !== d.class) return;
+      const dist = Math.hypot(t.tbbox[0]+t.tbbox[2]/2 - cx, t.tbbox[1]+t.tbbox[3]/2 - cy);
+      if (dist < bd) { bd = dist; best = i; }
+    });
+    const lim = Math.max(tb[2], tb[3]) * 0.8 + 40;
+    if (best !== null && bd < lim) {
+      const t = tracks[best]; used.add(best);
+      t.tbbox = tb; t.score = d.score; t.last = now;
+    } else {
+      tracks.push({ class: d.class, score: d.score, bbox: tb.slice(), tbbox: tb, last: now });
+      used.add(tracks.length - 1);
+    }
+  });
+}
+
+async function detectLoop() {
+  const video = document.getElementById('video');
+  const t0 = performance.now();
+  if (model && video.readyState >= 2 && !document.hidden && video.videoWidth) {
+    try {
+      const scale = DET_W / video.videoWidth;
+      detCanvas.width  = DET_W;
+      detCanvas.height = Math.round(video.videoHeight * scale);
+      detCtx.drawImage(video, 0, 0, detCanvas.width, detCanvas.height);
+      const dets = await model.detect(detCanvas);
+      lastDetections = dets;
+      updateTracks(dets, scale);
+      updateDetectionUI(dets);
+    } catch(e) { console.error(e); }
+  }
+  const wait = Math.max(0, DET_MIN_INTERVAL - (performance.now() - t0));
+  setTimeout(detectLoop, wait);
+}
+
+// ── RENDER (60 fps, independiente de la IA) ──
+function renderLoop() {
+  const now = performance.now();
+  tracks = tracks.filter(t => now - t.last < 400);      // olvidar lo que ya no se ve
+  const k = 0.35;                                       // suavizado
+  tracks.forEach(t => { for (let i = 0; i < 4; i++) t.bbox[i] += (t.tbbox[i] - t.bbox[i]) * k; });
+  drawDetections(tracks.map(t => ({ class: t.class, score: t.score, bbox: t.bbox })));
+  requestAnimationFrame(renderLoop);
+}
+renderLoop();
+
+// ── DIBUJAR DETECCIONES ──
+function drawDetections(dets) {
+  const canvas = document.getElementById('det-canvas');
+  const ctx    = canvas.getContext('2d');
+  const vw = canvas.width, vh = canvas.height;
+  const vid = document.getElementById('video');
+  const vidW = vid.videoWidth  || vw;
+  const vidH = vid.videoHeight || vh;
+
+  // Escala object-fit: cover
+  const scaleX = vw / vidW;
+  const scaleY = vh / vidH;
+  const scale  = Math.max(scaleX, scaleY);
+  const offX   = (vw - vidW * scale) / 2;
+  const offY   = (vh - vidH * scale) / 2;
+
+  ctx.clearRect(0, 0, vw, vh);
+
+  // Centro de pantalla
+  const cx = vw / 2, cy = vh / 2;
+
+  // Ordenar por distancia al centro
+  const sorted = [...dets].sort((a, b) => {
+    const da = distToCenter(a, scale, offX, offY, cx, cy);
+    const db = distToCenter(b, scale, offX, offY, cx, cy);
+    return da - db;
+  });
+
+  sorted.forEach((det, i) => {
+    const [x, y, w, h] = det.bbox;
+    const sx = x * scale + offX;
+    const sy = y * scale + offY;
+    const sw = w * scale;
+    const sh = h * scale;
+
+    const bx = sx + sw / 2;
+    const by = sy + sh / 2;
+    const r  = Math.max(sw, sh) / 2 + 16;
+
+    const isPrimary = i === 0;
+    const isPerson  = det.class === 'person';
+    const color     = isPrimary ? '#00EEFF' : '#00B4FF';
+    const alpha     = isPrimary ? 0.9 : 0.5;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth   = isPrimary ? 1.5 : 1;
+    ctx.shadowColor = color;
+    ctx.shadowBlur  = isPrimary ? 12 : 6;
+
+    // Círculo principal
+    ctx.beginPath();
+    ctx.arc(bx, by, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Segmentos internos (efecto lock-on)
+    if (isPrimary) {
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 16;
+      const segs = 4;
+      for (let s = 0; s < segs; s++) {
+        const start = (s / segs) * Math.PI * 2 + Math.PI / 8;
+        const end   = start + Math.PI / (segs * 1.2);
+        ctx.beginPath();
+        ctx.arc(bx, by, r + 8, start, end);
+        ctx.stroke();
+      }
+    }
+
+    // Líneas de esquina del bbox
+    ctx.lineWidth = 1;
+    ctx.shadowBlur = 8;
+    const cs = 14; // corner size
+    // TL
+    ctx.beginPath(); ctx.moveTo(sx, sy + cs); ctx.lineTo(sx, sy); ctx.lineTo(sx + cs, sy); ctx.stroke();
+    // TR
+    ctx.beginPath(); ctx.moveTo(sx+sw-cs, sy); ctx.lineTo(sx+sw, sy); ctx.lineTo(sx+sw, sy+cs); ctx.stroke();
+    // BL
+    ctx.beginPath(); ctx.moveTo(sx, sy+sh-cs); ctx.lineTo(sx, sy+sh); ctx.lineTo(sx+cs, sy+sh); ctx.stroke();
+    // BR
+    ctx.beginPath(); ctx.moveTo(sx+sw-cs, sy+sh); ctx.lineTo(sx+sw, sy+sh); ctx.lineTo(sx+sw, sy+sh-cs); ctx.stroke();
+
+    // Etiqueta
+    const label = LABELS_ES[det.class] || det.class.toUpperCase();
+    const conf  = Math.round(det.score * 100);
+    const tag   = isPerson ? `${label} — ${conf}%` : `${label} — ${conf}%`;
+    ctx.font = '10px "Share Tech Mono"';
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 8;
+    ctx.fillText(tag, sx + 4, sy - 6);
+
+    ctx.restore();
+  });
+}
+
+function distToCenter(det, scale, offX, offY, cx, cy) {
+  const [x, y, w, h] = det.bbox;
+  const bx = (x + w/2) * scale + offX;
+  const by = (y + h/2) * scale + offY;
+  return Math.hypot(bx - cx, by - cy);
+}
+
+// ── UI DE DETECCIÓN ──
+function updateDetectionUI(dets) {
+  document.getElementById('val-obj-count').textContent = dets.length;
+  const info = document.getElementById('detection-info');
+  if (dets.length > 0) {
+    const primary = dets.reduce((best, d) => d.score > (best?.score || 0) ? d : best, null);
+    const label   = LABELS_ES[primary.class] || primary.class.toUpperCase();
+    const conf    = Math.round(primary.score * 100);
+    document.getElementById('val-obj-primary').textContent  = label;
+    document.getElementById('val-confidence').textContent   = conf + ' %';
+    info.textContent = `OBJETIVO: ${label}`;
+    info.style.opacity = '1';
+  } else {
+    document.getElementById('val-obj-primary').textContent = 'NINGUNO';
+    document.getElementById('val-confidence').textContent  = '-- %';
+    info.style.opacity = '0';
+  }
+}
+
+// ── RELOJ ──
+function updateClock() {
+  const now  = new Date();
+  const hh   = String(now.getHours()).padStart(2,'0');
+  const mm   = String(now.getMinutes()).padStart(2,'0');
+  const ss   = String(now.getSeconds()).padStart(2,'0');
+  const dd   = String(now.getDate()).padStart(2,'0');
+  const mo   = String(now.getMonth()+1).padStart(2,'0');
+  const yyyy = now.getFullYear();
+  document.getElementById('val-time').textContent = `${hh}:${mm}:${ss}`;
+  document.getElementById('val-date').textContent = `${dd}/${mo}/${yyyy}`;
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── BATERÍA ──
+async function initBattery() {
+  if (!navigator.getBattery) {
+    document.getElementById('val-bat').textContent        = 'N/D';
+    document.getElementById('val-bat-status').textContent = 'NO SOPORTADO';
+    return;
+  }
+  const bat = await navigator.getBattery();
+  function updateBat() {
+    const pct = Math.round(bat.level * 100);
+    document.getElementById('val-bat').textContent = pct + ' %';
+    document.getElementById('battery-bar-fill').style.width = pct + '%';
+    document.getElementById('val-bat-status').textContent =
+      bat.charging ? 'CARGANDO' : pct > 20 ? 'NORMAL' : 'CRÍTICO';
+    document.getElementById('battery-bar-fill').style.background =
+      pct > 40 ? 'var(--cyan)' : pct > 20 ? '#ffaa00' : '#ff3333';
+  }
+  updateBat();
+  bat.addEventListener('levelchange', updateBat);
+  bat.addEventListener('chargingchange', updateBat);
+}
+initBattery();
+
+// ── GEOLOCALIZACIÓN + ALTITUD + CLIMA ──
+function initGeo() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const { latitude, longitude, altitude } = pos.coords;
+
+    // Altitud
+    if (altitude !== null) {
+      document.getElementById('val-alt').textContent = Math.round(altitude) + ' m';
+    } else {
+      // Fallback: Open-Elevation API
+      try {
+        const r = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${latitude},${longitude}`);
+        const d = await r.json();
+        const alt = d.results?.[0]?.elevation;
+        if (alt !== undefined) document.getElementById('val-alt').textContent = Math.round(alt) + ' m';
+      } catch(e) {
+        document.getElementById('val-alt').textContent = '-- m';
+      }
+    }
+
+    // Clima — Open-Meteo (sin API key)
+    try {
+      const r = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+        `&current=temperature_2m,relative_humidity_2m,weather_code&timezone=auto`
+      );
+      const d = await r.json();
+      const c = d.current;
+      const wmo = {
+        0:'DESPEJADO', 1:'MAYORM. DESPEJADO', 2:'PARCIALMENTE NUBLADO',
+        3:'NUBLADO', 45:'NIEBLA', 48:'NIEBLA CON ESCARCHA',
+        51:'LLOVIZNA L.', 53:'LLOVIZNA MOD.', 55:'LLOVIZNA INT.',
+        61:'LLUVIA L.', 63:'LLUVIA MOD.', 65:'LLUVIA INT.',
+        71:'NIEVE L.', 73:'NIEVE MOD.', 75:'NIEVE INT.',
+        80:'CHUBASCOS L.', 81:'CHUBASCOS MOD.', 82:'CHUBASCOS INT.',
+        95:'TORMENTA', 96:'TORMENTA C/GRANIZO', 99:'TORMENTA INTENSA'
+      };
+      document.getElementById('val-weather').textContent = wmo[c.weather_code] || 'VARIABLE';
+      document.getElementById('val-temp').textContent    = Math.round(c.temperature_2m) + ' °C';
+      document.getElementById('val-hum').textContent     = Math.round(c.relative_humidity_2m) + ' %';
+    } catch(e) {
+      document.getElementById('val-weather').textContent = 'SIN DATOS';
+    }
+
+  }, () => {
+    document.getElementById('val-alt').textContent     = '-- m';
+    document.getElementById('val-weather').textContent = 'SIN UBICACIÓN';
+  });
+}
+// initGeo() se llama desde initCamera() (iOS pide permisos tras un toque)
+
+// ── PWA: service worker (instalable + funciona offline tras la 1ª carga) ──
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(()=>{}));
+}
+</script>
+</body>
+</html>
